@@ -58,6 +58,10 @@ class InductionHook:
         hook.layer()
         batch, heads, dest, source = pattern.shape
         seq_len = dest // 2
-        for head in range(heads):
-            score = pattern[:, head, :, :].diagonal(1 - seq_len, dim1=-2, dim2=-1).mean()
-            self.score_store[hook.layer(), head] = score
+        for head_idx in range(heads):
+            head = pattern[:, head_idx, :, :]
+            score = self.induction_pattern(head, seq_len)
+            self.score_store[hook.layer(), head_idx] = score
+
+    def induction_pattern(self, head: Float[Tensor, "batch dest_pos source_pos"], seq_len: int):
+        return head.diagonal(1 - seq_len, dim1=-2, dim2=-1).mean()
