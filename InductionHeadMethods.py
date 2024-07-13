@@ -1,4 +1,6 @@
 import random
+
+import einops
 from transformer_lens import HookedTransformer, ActivationCache
 from jaxtyping import Int, Float
 from typing import List, Optional, Tuple
@@ -65,3 +67,19 @@ class InductionHook:
 
     def induction_pattern(self, head: Float[Tensor, "batch dest_pos source_pos"], seq_len: int):
         return head.diagonal(1 - seq_len, dim1=-2, dim2=-1).mean()
+
+
+class InductionAttribution:
+    @staticmethod
+    def logit_attribution(embed: Float[Tensor, "seq d_model"], results: List[Float[Tensor, "seq nheads d_model"]],
+        W_U: Float[Tensor, "d_model d_vocab"], tokens: Int[Tensor, "seq"]) -> Float[Tensor, "seq-1 n_components"]:
+        W_U_correct_tokens = W_U[:, tokens[1:]]
+        direct_path = einops.einsum(embed[:-1], W_U_correct_tokens, "seq d_model, d_model seq -> seq")
+        layers = [einops.einsum(result[:-1], W_U_correct_tokens, "seq nheads d_model, d_model seq -> seq nheads") for result in results]
+        return t.cat([direct_path.unsqueeze(-1)] + layers, dim=-1)
+
+    @staticmethod
+    def get_results(cache: ActivationCache, model: HookedTransformer) -> List[Float[Tensor, "seq nheads d_model"]]:
+        return [einops.einsum(cache["z", i], model.blocks[i].attn.W_O,
+                              "seq head_idx d_head, head_idx d_head d_model -> seq head_idx d_model") for i in
+                range(model.cfg.n_layers)]
